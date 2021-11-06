@@ -1,3 +1,6 @@
+#ifndef Mysocket
+#define Mysocket
+
 // system types
 #include <sys/types.h>  
 // system socket define
@@ -12,6 +15,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
+#include <unistd.h>
 #include "errexit.cpp"
 extern int errno;
 
@@ -59,6 +63,9 @@ int passivesock(const char* service, const char* transport, int qlen)
     // For TCP socket, convert it to passive mode
     if (type == SOCK_STREAM && listen(s, qlen) < 0)
         errexit("can't listen on %s port: %s \n", service, strerror(errno));
+
+    int enable = 1;
+    if (setsockopt(s, SOL_SOCKET, SO_REUSEADDR, &enable, sizeof(int)) < 0)errexit("setsockopt(SO_REUSEADDR) failed");
     return s;
 }
 
@@ -67,3 +74,52 @@ int passiveTCP(const char* service,int QLEN)
 {
     return passivesock(service, "TCP", QLEN);
 }
+
+ssize_t readLine(int fd, char *buffer, size_t n)
+{
+    ssize_t numRead;                    /* # of bytes fetched by last read() */
+    size_t totRead;                     /* Total bytes read so far */
+    char *buf;
+    char ch;
+
+    if (n <= 0 || buffer == NULL) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    buf = buffer;                       /* No pointer arithmetic on "void *" */
+
+    totRead = 0;
+    for (;;) {
+        numRead = read(fd, &ch, 1);
+        if(ch==4)return 0; // get end of transmission
+
+        if (numRead == -1) {
+            if (errno == EINTR)         /* Interrupted --> restart read() */
+                continue;
+            else
+                return -1;              /* Some other error */
+
+        } else if (numRead == 0) {      /* EOF */
+            if (totRead == 0)           /* No bytes read; return 0 */
+                return 0;
+            else                        /* Some bytes read; add '\0' */
+                break;
+
+        } else {                        /* 'numRead' must be 1 if we get here */
+            if (totRead < n - 1) {      /* Discard > (n - 1) bytes */
+                totRead++;
+                *buf++ = ch;
+            }
+
+            if (ch == '\n')
+                break;
+        }
+    }
+
+    *buf = '\0';
+    return totRead;
+}
+
+
+#endif

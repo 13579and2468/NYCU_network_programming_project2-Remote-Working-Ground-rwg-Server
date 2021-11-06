@@ -1,5 +1,5 @@
 #include "NPshell.h"
-#include "Mysocket.cpp"
+#include "../shared_lib/Mysocket.cpp"
 
 #include <sys/types.h>
 #include <sys/signal.h>

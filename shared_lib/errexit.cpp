@@ -1,7 +1,10 @@
+#ifndef Errexit
+#define Errexit
+
 // va_list
 #include <stdarg.h>     
 #include <stdio.h>
-#include <stdlib.h>
+#include <stdlib.h> 
 
 // Print error information
 int errexit(const char* format, ...)
@@ -12,3 +15,5 @@ int errexit(const char* format, ...)
     va_end(args);
     exit(1);
 }
+
+#endif

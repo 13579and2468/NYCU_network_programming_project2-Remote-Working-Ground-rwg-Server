@@ -8,8 +8,24 @@
 #include <sys/wait.h>
 #include "Process.h"
 #include "NPshell.h"
+#include "global.h"
+#include <netinet/in.h>
+#include <sys/socket.h>
+#include <arpa/inet.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <fcntl.h>    /* For O_RDWR */
+#include <unistd.h>
+#include <sys/stat.h>
+#include <sys/mman.h>
+#include <cstring>
+#include <sys/ioctl.h>
+
+
 using namespace std;
 
+
+void* NPshell::receive_shmfile;
 // split input into tokens
 vector<string> split(string s){
   stringstream ss(s);
@@ -35,10 +51,30 @@ int mysetenv(string var,string value){
   return setenv(var.c_str(),value.c_str(),1);
 }
 
-void init(){
+void NPshell::broadcast(string s)
+{
+  for(int i=1;i<31;i++)
+  {
+    if(userused[i])tell(i,s);
+  }
+}
+
+void NPshell::tell(int user,string s)
+{
+  int target_shmfilefd = shm_open(to_string(user).c_str(),O_RDWR|O_CREAT,0644);
+  void* target_shmfile = mmap(NULL,10240,PROT_READ | PROT_WRITE,MAP_SHARED,target_shmfilefd,0);
+  ftruncate(target_shmfilefd,10240);
+  memcpy(target_shmfile,s.c_str(),strlen(s.c_str()));
+  kill(userid_to_pid[user],SIGUSR1);  // use 777 to knock receiver 
+}
+
+void NPshell::init(){
   mysetenv("PATH","bin:.");
-  //setting SIGCHILD tp ignore will give zombie to init process
-  signal(SIGCHLD,SIG_IGN);
+  cout<<"****************************************\n** Welcome to the information server. **\n****************************************\n";
+  name = "(no name)";
+  stringstream ss;
+  ss << "*** User '"<<name<<"' entered from " << inet_ntoa(client_addr.sin_addr) << ":" << (int) ntohs(client_addr.sin_port) << ". ***\n";
+  broadcast(ss.str());
 }
 
 struct Numberpipe{
@@ -57,8 +93,19 @@ int fork_unitil_success(){
   return r;
 }
 
+void NPshell::get_message_handler(int sig){
+  cout<<(char*)receive_shmfile;
+  fflush(stdout);
+  *(char*)receive_shmfile = '\x00';
+  signal(sig, get_message_handler);
+}
+
 NPshell::NPshell(){
-  
+  shmfilefd = shm_open(to_string(userid).c_str(),O_RDWR|O_CREAT,0644);
+  receive_shmfile = mmap(NULL,10240,PROT_READ | PROT_WRITE,MAP_SHARED,shmfilefd,0);
+  ftruncate(shmfilefd,10240);
+
+  signal(SIGUSR1, get_message_handler);  // user SIGUSR1 to handle get message from other user or broadcast
 }
 
 int NPshell::run(){
@@ -68,6 +115,8 @@ int NPshell::run(){
   while(true)
   {
     cout<<"% ";
+    fflush(stdout);
+    int count=0;
     if(!getline(cin,input))break;
     vector<string> tokens = split(input);
     if(tokens.size() == 0)continue;  // continue when empty line
@@ -99,6 +148,8 @@ int NPshell::run(){
 
     }else if(tokens[0]=="exit")
     {
+      userused[userid] = false;
+      shm_unlink(to_string(userid).c_str());
       exit(0);
     }
 

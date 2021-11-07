@@ -19,8 +19,7 @@
 #include "errexit.cpp"
 extern int errno;
 
-// Allow test multi-service on the machine using different port
-unsigned int portbase = 1024;    
+// Allow test multi-service on the machine using different port   
 int passivesock(const char* service, const char* transport, int qlen)
 {
     // Store service entry return from getservbyname()
@@ -39,7 +38,7 @@ int passivesock(const char* service, const char* transport, int qlen)
     // Get port number
     // service is service name
     if (pse = getservbyname(service, transport))
-        sin.sin_port = htons(ntohs((unsigned short)pse->s_port) + portbase);
+        sin.sin_port = htons(ntohs((unsigned short)pse->s_port));
     // service is port number
     else if((sin.sin_port = htons((unsigned short)atoi(service))) == 0)
         errexit("can't get \"%s\" service entry\n", service);
@@ -51,12 +50,13 @@ int passivesock(const char* service, const char* transport, int qlen)
         type = SOCK_DGRAM;
     else
         type = SOCK_STREAM;
-    fprintf(stderr, "[SERVICE] transport: %s, protocol: %d, port: %u, type: %d\n", \
-            transport, ppe->p_proto, sin.sin_port, type);
+    fprintf(stderr, "[SERVICE] transport: %s, protocol: %d, port: %s, type: %d\n", \
+            transport, ppe->p_proto, service, type);
     // Create socket
     s = socket(PF_INET, type, ppe->p_proto);
-    if (s < 0)
-        errexit("can't create socket: %s \n", strerror(errno));
+    if (s < 0)errexit("can't create socket: %s \n", strerror(errno));
+    int enable = 1;
+    if (setsockopt(s, SOL_SOCKET, SO_REUSEADDR, &enable, sizeof(int)) < 0)errexit("setsockopt(SO_REUSEADDR) failed");
     // Bind socket to service-end address
     if (bind(s, (struct sockaddr*)&sin, sizeof(sin)) < 0)
         errexit("can't bind to %s port: %s \n", service, strerror(errno));
@@ -64,8 +64,6 @@ int passivesock(const char* service, const char* transport, int qlen)
     if (type == SOCK_STREAM && listen(s, qlen) < 0)
         errexit("can't listen on %s port: %s \n", service, strerror(errno));
 
-    int enable = 1;
-    if (setsockopt(s, SOL_SOCKET, SO_REUSEADDR, &enable, sizeof(int)) < 0)errexit("setsockopt(SO_REUSEADDR) failed");
     return s;
 }
 

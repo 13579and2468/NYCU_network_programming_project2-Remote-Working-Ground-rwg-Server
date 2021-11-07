@@ -14,9 +14,10 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <sys/mman.h>
+#include "global.h"
 
 #define	QLEN		   5	/* maximum connection queue length	*/
-#define	BUFSIZE		4096
 
 extern int	errno;
 
@@ -25,6 +26,8 @@ void	reaper(int);
 
 int main(int argc, char *argv[])
 {
+	//setting SIGCHILD tp ignore will give zombie to init process
+  	signal(SIGCHLD,SIG_IGN);
 	char	*service;	/* service name or port number	*/
 	struct	sockaddr_in fsin;	/* the address of a client	*/
 	socklen_t	alen;			/* length of client's address	*/
@@ -43,9 +46,8 @@ int main(int argc, char *argv[])
 
 	msock = passiveTCP(service, QLEN);
 
-	signal(SIGCHLD, reaper);
-
 	while (1) {
+		sockaddr_in fsin;
 		alen = sizeof(fsin);
 		ssock = accept(msock, (struct sockaddr *)&fsin, &alen);
 		if (ssock < 0) {
@@ -53,14 +55,24 @@ int main(int argc, char *argv[])
 				continue;
 			errexit("accept: %s\n", strerror(errno));
 		}
-		switch (fork()) {
+		client_addr = fsin;
+		for(int i=1;i<31;i++)
+		{
+			if(!userused[i])
+			{
+				userused[i] = true;
+				userid = i;
+				break;
+			}
+		}
+		switch (int pid = fork()) {
 		case 0:		/* child */
             {
                 close(msock);
                 dup2(ssock,STDIN_FILENO);
                 dup2(ssock,STDERR_FILENO);
                 dup2(ssock,STDOUT_FILENO);
-                NPshell shell;
+				NPshell shell;
                 shell.run();
                 exit(0);
                 break;
@@ -68,21 +80,9 @@ int main(int argc, char *argv[])
 		case -1:
 			errexit("fork: %s\n", strerror(errno));
             break;
+		default:
+			userid_to_pid[userid] = pid;
 		}
         close(ssock);
 	}
-}
-
-/*------------------------------------------------------------------------
- * reaper - clean up zombie children
- *------------------------------------------------------------------------
- */
-/*ARGSUSED*/
-void
-reaper(int sig)
-{
-	int	status;
-
-	while (wait3(&status, WNOHANG, (struct rusage *)0) >= 0)
-		/* empty */;
 }

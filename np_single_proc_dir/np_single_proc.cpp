@@ -89,6 +89,12 @@ int main(int argc, char **argv,char **envp)
 					FD_CLR(fd, &afds);
 					userused[users[fd]->userid]=0;
 					users[fd]->broadcast("*** User '"+users[fd]->name+"' left. ***\n");
+					for(auto &p : users[fd]->userpipes_to_me)
+					{
+						p.used=false;
+						close(p.thepipe[0]);
+						close(p.thepipe[1]);
+					}
 					delete users[fd];
 					continue;
 				}

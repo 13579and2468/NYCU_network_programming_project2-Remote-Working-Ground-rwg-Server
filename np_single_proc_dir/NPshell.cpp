@@ -12,6 +12,8 @@
 #include <arpa/inet.h>
 #include <stdarg.h>
 #include <sstream>
+#include <sys/stat.h>    
+#include <fcntl.h>
 
 using namespace std;
 
@@ -101,6 +103,9 @@ int NPshell::runline(string line){
     dprintf(mysocket,"%% ");
     return 0;  // continue when empty line
   }
+  int prevpipe[2]={-1,-1};
+  int thispipe[2]={-1,-1};
+  
   for (Numberpipe& p: numberpipes)p.afterline--;  // decrease all pipe line 
 
   // prepare if the line is piped
@@ -112,6 +117,54 @@ int NPshell::runline(string line){
     linepiped = true;
     pipe_to_this_line = *pipe_it;
     numberpipes.erase(pipe_it);
+  }
+
+  //run commands
+  auto it = tokens.begin();
+  auto previt = it;
+  vector<pid_t> childs;
+  //if numberpiped pipe to first command
+  if(linepiped)
+  {
+    close(pipe_to_this_line.lastpipe[1]);
+    thispipe[0]=pipe_to_this_line.lastpipe[0];
+    childs = pipe_to_this_line.proc_pids;
+  }
+
+  // prepare if the line is userpiped
+  //check if userpiped
+  int user_pipe_from=-1;
+  for(auto s:tokens)
+  {
+    if(s[0]=='<'&&s.length()!=1)
+    {
+      user_pipe_from = atoi( s.substr(1).c_str() );
+      tokens.erase(find(tokens.begin(),tokens.end(),s));
+      break;
+    }
+  }
+  // there is userpipe to me
+  if(user_pipe_from!=-1)
+  {
+    //user no exist
+    if(user_pipe_from>30 || user_pipe_from<=0 || !userused[user_pipe_from])
+    {
+      dprintf(mysocket,"*** Error: user #%d does not exist yet. ***\n",user_pipe_from);
+      thispipe[0]=open("/dev/null", O_RDONLY);;
+    }else if(!userpipes_to_me[user_pipe_from].used)
+    {
+      dprintf(mysocket,"*** Error: the pipe #%d->#%d does not exist yet. ***\n",user_pipe_from,userid);
+      thispipe[0]=open("/dev/null", O_RDONLY);;
+    }else
+    {
+      userpipes_to_me[user_pipe_from].used = false;
+      close(userpipes_to_me[user_pipe_from].thepipe[1]);
+      thispipe[0] = userpipes_to_me[user_pipe_from].thepipe[0];
+      childs = userpipes_to_me[user_pipe_from].proc_pids;
+      stringstream ss;
+      ss<<"*** "<<name<<" (#"<<userid<<") just received from "<<get_user_by_id[user_pipe_from]->name<<" (#"<<user_pipe_from<<") by '"<<line.substr(0,min(line.find("\r"),line.find("\n")))<<"' ***\n";
+      broadcast(ss.str());
+    }
   }
     
   // built-in commands
@@ -130,6 +183,12 @@ int NPshell::runline(string line){
     return 0;
   }else if(tokens[0]=="exit")
   {
+    for(auto &p : userpipes_to_me)
+    {
+      p.used=false;
+      close(p.thepipe[0]);
+      close(p.thepipe[1]);
+    }
     return 2;
   }else if(tokens[0]=="who")
   {
@@ -191,20 +250,6 @@ int NPshell::runline(string line){
     dprintf(mysocket,"%% ");
     return 0;
   }
-
-  //run commands
-  auto it = tokens.begin();
-  auto previt = it;
-  vector<pid_t> childs;
-  int prevpipe[2]={-1,-1};
-  int thispipe[2]={-1,-1};
-  //if numberpiped pipe to first command
-  if(linepiped)
-  {
-    close(pipe_to_this_line.lastpipe[1]);
-    thispipe[0]=pipe_to_this_line.lastpipe[0];
-    childs = pipe_to_this_line.proc_pids;
-  }
   
   while(true)
   {
@@ -263,6 +308,8 @@ int NPshell::runline(string line){
       prevpipe[1] = thispipe[1];
       auto dup_pipe = numberpipes.begin();
       bool new_pipe = false;
+      bool new_user_pipe = false;
+      int userpipe_to_user;
       // number pipe
       if((*--it)[0] == '|' || (*it)[0] == '!')
       {
@@ -284,12 +331,47 @@ int NPshell::runline(string line){
         }
         numberpipes.push_back(np);
       }
+
+      
+      //user pipe  >3434  != >
+      if((*it)[0] == '>' && (*it).length() != 1)
+      {
+        argv[i-1]=NULL;
+        userpipe_to_user = atoi( (*it).substr(1).c_str() );
+        
+        pipe(thispipe);
+        // the user doesn't exist
+        if(userpipe_to_user>30 || userpipe_to_user<=0 || !userused[userpipe_to_user])
+        {
+          dprintf(mysocket,"*** Error: user #%d does not exist yet. ***\n",userpipe_to_user);
+          close(thispipe[1]);
+          thispipe[1] = open("/dev/null", O_WRONLY);   // pipe to /dev/null
+        }// pipe exist
+        else if((get_user_by_id[userpipe_to_user]->userpipes_to_me)[userid].used)
+        {
+          dprintf(mysocket,"*** Error: the pipe #%d->#%d already exists. ***\n",userid,userpipe_to_user);
+          close(thispipe[1]);
+          thispipe[1] = open("/dev/null", O_WRONLY);
+        }else//new user pipe
+        {
+          new_user_pipe = true;
+          (get_user_by_id[userpipe_to_user]->userpipes_to_me)[userid].thepipe[0] = thispipe[0];
+          (get_user_by_id[userpipe_to_user]->userpipes_to_me)[userid].thepipe[1] = thispipe[1];
+          (get_user_by_id[userpipe_to_user]->userpipes_to_me)[userid].used = true;
+          (get_user_by_id[userpipe_to_user]->userpipes_to_me)[userid].from_user_id = userid;
+          (get_user_by_id[userpipe_to_user]->userpipes_to_me)[userid].to_user_id = userpipe_to_user;
+          stringstream ss;
+          ss<<"*** "<<name<<" (#"<<userid<<") just piped '"<<line.substr(0,min(line.find("\r"),line.find("\n")))<<"' to "<<get_user_by_id[userpipe_to_user]->name<<" (#"<<userpipe_to_user<<") ***\n";
+          broadcast(ss.str());
+        }
+      }
+
       // fork child and execute 
       pid_t pid = fork_unitil_success();
       if(pid == 0)
       {
         Process proc((char *)(*previt).c_str(),(char **)argv,myenvp,mysocket);
-        if((*it)[0] == '|' || (*it)[0] == '!')proc.output = thispipe[1];
+        if((*it)[0] == '|' || (*it)[0] == '!' || ((*it)[0] == '>' && (*it).length() != 1))proc.output = thispipe[1];
         if((*it)[0] == '!')proc.err = thispipe[1];
         
         close(prevpipe[1]);
@@ -311,6 +393,20 @@ int NPshell::runline(string line){
             dup_pipe->proc_pids.push_back(pid);
           }
           childs.clear();
+        }
+
+        // if new userpipe
+        if(new_user_pipe)
+        {
+          (get_user_by_id[userpipe_to_user]->userpipes_to_me)[userid].proc_pids = childs;
+          childs.clear();
+        }
+
+        // if userpipe to dev/null
+        if((*it)[0] == '>' && (*it).length() != 1 && !new_user_pipe)
+        {
+          close(thispipe[0]);
+          close(thispipe[1]);
         }
       }
       //wait all process which needed

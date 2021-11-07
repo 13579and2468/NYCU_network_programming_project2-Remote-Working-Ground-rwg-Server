@@ -17,6 +17,22 @@ struct Numberpipe{
   }
 };
 
+class Userpipe{
+    public:
+        bool used;
+        int from_user_id;
+        int to_user_id;
+        int thepipe[2];
+        vector<int> proc_pids; // if no number pipe continue need to wait all of them
+        Userpipe(){
+            used = false;
+            from_user_id=-1;
+            to_user_id=-1;
+            thepipe[0]=-1;
+            thepipe[1]=-1;
+        }
+};
+
 class NPshell
 {
     public:
@@ -25,6 +41,7 @@ class NPshell
         int runline(string line);
         string input;
         vector<Numberpipe> numberpipes;
+        Userpipe userpipes_to_me[31]; // reuse number pipe  number = from_user_id
         int mysocket;
         vector<string> myenvp;
         sockaddr_in client_addr;

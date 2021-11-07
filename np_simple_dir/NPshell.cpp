@@ -38,7 +38,6 @@ int mysetenv(string var,string value){
 void init(){
   mysetenv("PATH","bin:.");
   //setting SIGCHILD tp ignore will give zombie to init process
-  signal(SIGCHLD,SIG_IGN);
 }
 
 struct Numberpipe{

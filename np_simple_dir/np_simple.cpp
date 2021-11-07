@@ -25,6 +25,7 @@ void	reaper(int);
 
 int main(int argc, char *argv[])
 {
+	signal(SIGCHLD,SIG_IGN);
 	char	*service;	/* service name or port number	*/
 	struct	sockaddr_in fsin;	/* the address of a client	*/
 	socklen_t	alen;			/* length of client's address	*/
@@ -42,8 +43,6 @@ int main(int argc, char *argv[])
 	}
 
 	msock = passiveTCP(service, QLEN);
-
-	signal(SIGCHLD, reaper);
 
 	while (1) {
 		alen = sizeof(fsin);
@@ -71,18 +70,4 @@ int main(int argc, char *argv[])
 		}
         close(ssock);
 	}
-}
-
-/*------------------------------------------------------------------------
- * reaper - clean up zombie children
- *------------------------------------------------------------------------
- */
-/*ARGSUSED*/
-void
-reaper(int sig)
-{
-	int	status;
-
-	while (wait3(&status, WNOHANG, (struct rusage *)0) >= 0)
-		/* empty */;
 }

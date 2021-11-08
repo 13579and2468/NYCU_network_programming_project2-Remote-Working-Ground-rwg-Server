@@ -55,6 +55,7 @@ class NPshell
         NPshell** get_user_by_id;
         void broadcast(string);
         string name;
+        vector<pid_t> is_wait_for;
 };
 
 #endif

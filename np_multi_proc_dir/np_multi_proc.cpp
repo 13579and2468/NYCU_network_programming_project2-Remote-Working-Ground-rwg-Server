@@ -22,10 +22,31 @@
 extern int	errno;
 
 using namespace std;
-void	reaper(int);
+
+void	ctrl_c_handler(int sig)
+{
+	for(int i=1;i<31;i++)
+	{
+		munmap(client_addrs[i],sizeof(sockaddr_in));
+		munmap(usernames[i],21*sizeof(char));
+	}
+	fflush(stderr);
+	munmap(client_addrs,31*sizeof(sockaddr_in*));
+	munmap(usernames,31*sizeof(char*));
+
+	munmap(userused,31*sizeof(bool));
+	munmap(userid_to_pid,31*sizeof(int));
+	munmap(userpipes_used,31*31*sizeof(bool));
+
+	for(int i=1;i<31;i++)if(access( ("/dev/shm/"+to_string(i)).c_str(), F_OK )==0)shm_unlink(to_string(i).c_str());  //clear get message shm in /dev/shm/
+
+	for(int i=1;i<31;i++)for(int j=1;j<31;j++)if(access( ("user_pipe/"+to_string(i)+"to"+to_string(j)).c_str(), F_OK )==0)unlink(("user_pipe/"+to_string(i)+"to"+to_string(j)).c_str()); 
+	exit(0);
+}
 
 int main(int argc, char *argv[])
 {
+	signal(SIGINT, ctrl_c_handler);
 	//setting SIGCHILD tp ignore will give zombie to init process
   	signal(SIGCHLD,SIG_IGN);
 	char	*service;	/* service name or port number	*/
@@ -98,13 +119,6 @@ int main(int argc, char *argv[])
 		}
         close(ssock);
 	}
-	for(int i=1;i<31;i++)
-	{
-		free(client_addrs[i]);
-		free(usernames[i]);
-	}
-	free(client_addrs);
-	free(usernames);
 
 	return 0 ;
 }

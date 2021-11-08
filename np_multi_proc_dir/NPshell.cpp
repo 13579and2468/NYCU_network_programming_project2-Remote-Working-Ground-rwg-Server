@@ -64,16 +64,16 @@ void NPshell::tell(int user,string s)
   int target_shmfilefd = shm_open(to_string(user).c_str(),O_RDWR|O_CREAT,0644);
   void* target_shmfile = mmap(NULL,10240,PROT_READ | PROT_WRITE,MAP_SHARED,target_shmfilefd,0);
   ftruncate(target_shmfilefd,10240);
-  memcpy(target_shmfile,s.c_str(),strlen(s.c_str()));
+  memcpy(target_shmfile,s.c_str(),strlen(s.c_str())+1);
   kill(userid_to_pid[user],SIGUSR1);  // use 777 to knock receiver 
 }
 
 void NPshell::init(){
   mysetenv("PATH","bin:.");
   cout<<"****************************************\n** Welcome to the information server. **\n****************************************\n";
-  name = "(no name)";
+  memcpy(usernames[userid],"(no name)\x00",strlen("(no name)\x00")+1);
   stringstream ss;
-  ss << "*** User '"<<name<<"' entered from " << inet_ntoa(client_addr.sin_addr) << ":" << (int) ntohs(client_addr.sin_port) << ". ***\n";
+  ss << "*** User '"<<usernames[userid]<<"' entered from " << inet_ntoa(client_addrs[userid]->sin_addr) << ":" << (int) ntohs(client_addrs[userid]->sin_port) << ". ***\n";
   broadcast(ss.str());
 }
 
@@ -150,7 +150,60 @@ int NPshell::run(){
     {
       userused[userid] = false;
       shm_unlink(to_string(userid).c_str());
+      broadcast(string("*** User '")+string(usernames[userid])+string("' left. ***\n"));
       exit(0);
+    }else if(tokens[0]=="who")
+    {
+      cout<<"<ID> <nickname> <IP:port> <indicate me>"<<endl;
+      for(int i=1;i<31;i++)
+      {
+        if(!userused[i])continue;
+        cout<<i<<" "<<usernames[i]<<" "<< inet_ntoa(client_addrs[i]->sin_addr) << ":" << (int) ntohs(client_addrs[i]->sin_port);
+        if(userid==i)cout<<"  "<<"<-me";
+        cout<<endl;
+      }
+      continue;
+    }else if(tokens[0]=="name")
+    {
+      if(tokens.size()==1)continue; //no enough argument
+
+      bool c = false;
+      //no same name
+      for(int i=1;i<31;i++)
+      {
+        if(!userused[i])continue;
+        if(string(usernames[i])==input.substr(input.find(tokens[1]),min(input.find("\r"),input.find("\n"))-input.find(tokens[1])))
+        {
+          cout<<"*** User '"<<input.substr(input.find(tokens[1]),min(input.find("\r"),input.find("\n"))-input.find(tokens[1]))<<"' already exists. ***"<<endl;
+          c = true;
+          break;
+        }
+      }
+      if(c)continue;
+      
+      memcpy(usernames[userid],input.substr(input.find(tokens[1]),min(input.find("\r"),input.find("\n"))-input.find(tokens[1])).c_str(),strlen(input.substr(input.find(tokens[1]),min(input.find("\r"),input.find("\n"))-input.find(tokens[1])).c_str())+1);
+      stringstream ss;
+      ss<<"*** User from "<< inet_ntoa(client_addrs[userid]->sin_addr) << ":" << (int) ntohs(client_addrs[userid]->sin_port)<<" is named '"<<usernames[userid]<<"'. ***"<<endl;
+      broadcast(ss.str());
+      continue;
+    }else if(tokens[0]=="tell")
+    {
+      if(tokens.size()<=2)continue; //no enough argument
+      if(userused[stoi(tokens[1])]==0)
+      {
+        dprintf(STDOUT_FILENO,"*** Error: user #%s does not exist yet. ***\n",tokens[1].c_str());
+        continue;
+      }
+      
+      tell(stoi(tokens[1]),"*** "+string(usernames[userid])+" told you ***: "+input.substr(input.find(tokens[2]),min(input.find("\r"),input.find("\n"))-input.find(tokens[2]))+"\n");
+      continue;
+    }else if(tokens[0]=="yell")
+    {
+      if(tokens.size()<=1)continue; //no enough argument
+      stringstream ss;
+      ss<<"*** "<<usernames[userid]<<" yelled ***: "<<input.substr(input.find(tokens[1]),min(input.find("\r"),input.find("\n"))-input.find(tokens[1]))<<"\n";
+      broadcast(ss.str());
+      continue;
     }
 
     //run commands

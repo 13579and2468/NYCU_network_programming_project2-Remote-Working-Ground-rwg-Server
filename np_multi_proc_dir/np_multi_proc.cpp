@@ -46,6 +46,13 @@ int main(int argc, char *argv[])
 
 	msock = passiveTCP(service, QLEN);
 
+	//prepare shared memory for usernames and user sockaddr
+	for(int i=1;i<31;i++)
+	{
+		client_addrs[i] = (sockaddr_in*)mmap(NULL,sizeof(sockaddr_in),PROT_READ | PROT_WRITE,MAP_SHARED | MAP_ANONYMOUS,-1,0);
+		usernames[i] =  (char*)mmap(NULL,21*sizeof(char),PROT_READ | PROT_WRITE,MAP_SHARED | MAP_ANONYMOUS,-1,0); // name max 20 length
+	}
+
 	while (1) {
 		sockaddr_in fsin;
 		alen = sizeof(fsin);
@@ -55,11 +62,11 @@ int main(int argc, char *argv[])
 				continue;
 			errexit("accept: %s\n", strerror(errno));
 		}
-		client_addr = fsin;
 		for(int i=1;i<31;i++)
 		{
 			if(!userused[i])
 			{
+				memcpy(client_addrs[i],&fsin,sizeof(fsin));
 				userused[i] = true;
 				userid = i;
 				break;
@@ -85,4 +92,13 @@ int main(int argc, char *argv[])
 		}
         close(ssock);
 	}
+	for(int i=1;i<31;i++)
+	{
+		free(client_addrs[i]);
+		free(usernames[i]);
+	}
+	free(client_addrs);
+	free(usernames);
+
+	return 0 ;
 }

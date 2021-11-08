@@ -3,9 +3,10 @@
 #ifndef GLOBAL_H
 #define GLOBAL_H
 
-extern sockaddr_in client_addr;
 extern int userid;
 extern bool* userused;
-extern int* userid_to_pid; 
+extern int* userid_to_pid;
+extern char** usernames;
+extern sockaddr_in** client_addrs; 
 #endif
 

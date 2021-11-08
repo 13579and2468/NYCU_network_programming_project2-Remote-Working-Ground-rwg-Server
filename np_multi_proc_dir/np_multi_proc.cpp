@@ -53,6 +53,12 @@ int main(int argc, char *argv[])
 		usernames[i] =  (char*)mmap(NULL,21*sizeof(char),PROT_READ | PROT_WRITE,MAP_SHARED | MAP_ANONYMOUS,-1,0); // name max 20 length
 	}
 
+	//clear userpipes flag
+	for(int i=0;i<31*31;i++)
+	{
+		userpipes_used[i] = false;
+	}
+
 	while (1) {
 		sockaddr_in fsin;
 		alen = sizeof(fsin);

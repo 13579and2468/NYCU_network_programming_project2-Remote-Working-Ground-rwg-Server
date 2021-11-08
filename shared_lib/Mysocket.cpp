@@ -16,6 +16,7 @@
 #include <string.h>
 #include <errno.h>
 #include <unistd.h>
+#include <sys/stat.h>
 #include "errexit.cpp"
 extern int errno;
 
